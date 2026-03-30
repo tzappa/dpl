@@ -50,15 +50,13 @@ if ($config === false) {
 }
 
 // Check the local directory for git and get the current revision
-$localRev = null;
-exec('git rev-parse --verify HEAD 2>/dev/null', $gitOutput, $gitCode);
-if ($gitCode === 0) {
-    $localRev = trim($gitOutput[0]);
-    echo 'Local revision: ' . $localRev . PHP_EOL;
-} else {
+exec('git rev-parse HEAD 2>/dev/null', $gitOutput, $gitCode);
+$localRev = trim($gitOutput[0] ?? '');
+if ($gitCode !== 0 || !preg_match('/^[0-9a-f]{40}$/i', $localRev)) {
     fwrite(STDERR, 'Error: Failed to get local git revision. Is this a git repository?' . PHP_EOL);
     exit(1);
 }
+echo "Local revision: $localRev" . PHP_EOL;
 
 $main = $config['main'] ?? [];
 
