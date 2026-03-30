@@ -160,15 +160,12 @@ $port    = (int) ($main['port'] ?? 22);
 $user    = $main['user'] ?? null;
 $sshKey  = $main['ssh_key'] ?? null;
 
-$ssh = "ssh -p $port";
+$sshBase = "ssh -p $port";
 if ($sshKey) {
-    $ssh .= " -i $sshKey";
+    $sshBase .= " -i $sshKey";
 }
-if ($user) {
-    $ssh .= " $user@$host";
-} else {
-    $ssh .= " $host";
-}
+$sshDest = $user ? "$user@$host" : $host;
+$ssh     = "$sshBase $sshDest";
 
 $revFile = "$path/.dplrev";
 
@@ -268,3 +265,61 @@ if ($answer !== '' && strtolower($answer) !== 'y' && strtolower($answer) !== 'ye
     echo 'Aborted.' . PHP_EOL;
     exit(0);
 }
+
+// Upload files
+$uploaded = 0;
+$uploadFailed = [];
+if (!empty($uploadFiles)) {
+    // Write the file list to a temp file and pass it to rsync via --files-from
+    $tmpFile = tempnam(sys_get_temp_dir(), 'dpl_');
+    file_put_contents($tmpFile, implode(PHP_EOL, $uploadFiles) . PHP_EOL);
+    $rsync = "rsync -az --files-from=" . escapeshellarg($tmpFile) . " -e " . escapeshellarg($sshBase) . " . $sshDest:$path/ 2>/dev/null";
+    exec($rsync, $rsyncOutput, $rsyncCode);
+    unlink($tmpFile);
+    if ($rsyncCode !== 0) {
+        $uploadFailed = $uploadFiles;
+    } else {
+        $uploaded = count($uploadFiles);
+    }
+}
+
+// Delete files
+$deleted = 0;
+$deleteFailed = [];
+foreach ($deleteFiles as $file) {
+    $remoteFile = escapeshellarg("$path/$file");
+    exec("$ssh 'rm -f $remoteFile' 2>/dev/null", $rmOutput, $rmCode);
+    if ($rmCode !== 0) {
+        $deleteFailed[] = $file;
+    } else {
+        $deleted++;
+    }
+}
+
+// Update remote revision if at least uploads succeeded (partial failure still records progress)
+if (empty($uploadFailed)) {
+    if (!writeRemoteRevision($ssh, $revFile, $localRev)) {
+        fwrite(STDERR, "Warning: Deploy done but failed to update remote revision in $revFile." . PHP_EOL);
+    }
+}
+
+// Summary
+echo PHP_EOL . 'Deploy summary:' . PHP_EOL;
+echo "  Uploaded : $uploaded" . PHP_EOL;
+echo "  Deleted  : $deleted" . PHP_EOL;
+
+if (!empty($uploadFailed)) {
+    fwrite(STDERR, PHP_EOL . 'Failed to upload (' . count($uploadFailed) . '):' . PHP_EOL);
+    foreach ($uploadFailed as $file) {
+        fwrite(STDERR, "  $file" . PHP_EOL);
+    }
+}
+if (!empty($deleteFailed)) {
+    fwrite(STDERR, PHP_EOL . 'Failed to delete (' . count($deleteFailed) . '):' . PHP_EOL);
+    foreach ($deleteFailed as $file) {
+        fwrite(STDERR, "  $file" . PHP_EOL);
+    }
+}
+
+$exitCode = (!empty($uploadFailed) || !empty($deleteFailed)) ? 1 : 0;
+exit($exitCode);
