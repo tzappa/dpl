@@ -69,6 +69,8 @@ INI;
 
 $iniFile = getcwd() . '/dpl.ini';
 
+$noColor = in_array('--no-color', $argv);
+
 if (in_array('--init', $argv)) {
     if (file_exists($iniFile)) {
         fwrite(STDERR, 'Error: dpl.ini already exists.' . PHP_EOL);
@@ -246,9 +248,9 @@ if (empty($uploadFiles) && empty($deleteFiles)) {
     exit(0);
 }
 
-$green = "\033[32m";
-$red   = "\033[31m";
-$reset = "\033[0m";
+$green = $noColor ? '' : "\033[32m";
+$red   = $noColor ? '' : "\033[31m";
+$reset = $noColor ? '' : "\033[0m";
 
 $totalFiles = count($uploadFiles) + count($deleteFiles);
 echo "Files to deploy ($totalFiles):" . PHP_EOL;
