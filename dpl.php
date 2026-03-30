@@ -218,6 +218,14 @@ if ($remoteRev === '') {
     // No previous deploy — all tracked files are uploads, nothing to delete
     exec('git ls-files 2>/dev/null', $uploadFiles, $code);
 } else {
+    // Verify the remote revision exists in this repository before diffing
+    exec("git cat-file -t $remoteRev 2>/dev/null", $catOutput, $catCode);
+    if ($catCode !== 0) {
+        fwrite(STDERR, "Error: Remote revision $remoteRev does not exist in this repository." . PHP_EOL);
+        fwrite(STDERR, "       Is \"$path\" on $host the right path for this project?" . PHP_EOL);
+        exit(1);
+    }
+
     // git diff --name-status gives lines like "M\tfile", "D\tfile", "R90\told\tnew"
     $diffOutput = [];
     exec("git diff --name-status $remoteRev $localRev 2>/dev/null", $diffOutput, $code);
