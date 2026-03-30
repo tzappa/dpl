@@ -11,6 +11,16 @@ if (version_compare(PHP_VERSION, '8.3.0', '<')) {
 }
 
 /**
+ * Writes the given revision string to the .dplrev file on the remote host.
+ * Returns true on success, false on failure.
+ */
+function writeRemoteRevision(string $ssh, string $revFile, string $revision): bool
+{
+    exec("$ssh 'echo " . escapeshellarg($revision) . " > $revFile' 2>/dev/null", $output, $code);
+    return $code === 0;
+}
+
+/**
  * Filters a list of files by exclude patterns.
  * Patterns support wildcards (fnmatch-style): *.log, composer.*, .*, vendor/*
  * A pattern without a wildcard that matches a path prefix is treated as a directory: vendor
@@ -195,12 +205,34 @@ if ($remoteRev !== '' && !preg_match('/^[0-9a-f]{32,40}$/i', $remoteRev)) {
 
 echo 'Remote revision: ' . ($remoteRev ?: '(none)') . PHP_EOL;
 
+// check if local revision is the same as remote revision
+if ($localRev === $remoteRev) {
+    echo 'Local revision is the same as remote revision. Nothing to deploy.' . PHP_EOL;
+    exit(0);
+}
+
+$uploadFiles = [];
+$deleteFiles = [];
+
 if ($remoteRev === '') {
-    // No previous deploy — list all files tracked by git
-    exec('git ls-files 2>/dev/null', $changedFiles, $code);
+    // No previous deploy — all tracked files are uploads, nothing to delete
+    exec('git ls-files 2>/dev/null', $uploadFiles, $code);
 } else {
-    // Diff between remote and local revision
-    exec("git diff --name-only $remoteRev $localRev 2>/dev/null", $changedFiles, $code);
+    // git diff --name-status gives lines like "M\tfile", "D\tfile", "R90\told\tnew"
+    $diffOutput = [];
+    exec("git diff --name-status $remoteRev $localRev 2>/dev/null", $diffOutput, $code);
+    foreach ($diffOutput as $line) {
+        $parts = explode("\t", $line);
+        $status = $parts[0][0]; // first char: A, M, D, R, C, ...
+        if ($status === 'D') {
+            $deleteFiles[] = $parts[1];
+        } elseif ($status === 'R') {
+            $deleteFiles[] = $parts[1]; // old name → delete
+            $uploadFiles[] = $parts[2]; // new name → upload
+        } else {
+            $uploadFiles[] = $parts[1];
+        }
+    }
 }
 
 if ($code !== 0) {
@@ -208,14 +240,31 @@ if ($code !== 0) {
     exit(1);
 }
 
-$changedFiles = filterExcluded($changedFiles, $excludePatterns);
+$uploadFiles = filterExcluded($uploadFiles, $excludePatterns);
+$deleteFiles = filterExcluded($deleteFiles, $excludePatterns);
 
-if (empty($changedFiles)) {
+if (empty($uploadFiles) && empty($deleteFiles)) {
     echo 'Nothing to deploy.' . PHP_EOL;
+    writeRemoteRevision($ssh, $revFile, $localRev);
     exit(0);
 }
 
-echo 'Files to deploy (' . count($changedFiles) . '):' . PHP_EOL;
-foreach ($changedFiles as $file) {
-    echo "  $file" . PHP_EOL;
+$green = "\033[32m";
+$red   = "\033[31m";
+$reset = "\033[0m";
+
+$totalFiles = count($uploadFiles) + count($deleteFiles);
+echo "Files to deploy ($totalFiles):" . PHP_EOL;
+foreach ($uploadFiles as $file) {
+    echo "  {$green}U  $file{$reset}" . PHP_EOL;
+}
+foreach ($deleteFiles as $file) {
+    echo "  {$red}D  $file{$reset}" . PHP_EOL;
+}
+
+echo PHP_EOL . 'Continue? [Y/n] ';
+$answer = trim(fgets(STDIN));
+if ($answer !== '' && strtolower($answer) !== 'y' && strtolower($answer) !== 'yes') {
+    echo 'Aborted.' . PHP_EOL;
+    exit(0);
 }
