@@ -69,7 +69,8 @@ INI;
 
 $iniFile = getcwd() . '/dpl.ini';
 
-$noColor = in_array('--no-color', $argv);
+$noColor   = in_array('--no-color', $argv);
+$autoYes   = in_array('--yes', $argv) || in_array('-y', $argv);
 
 if (in_array('--init', $argv)) {
     if (file_exists($iniFile)) {
@@ -261,11 +262,15 @@ foreach ($deleteFiles as $file) {
     echo "  {$red}D  $file{$reset}" . PHP_EOL;
 }
 
-echo PHP_EOL . 'Continue? [Y/n] ';
-$answer = trim(fgets(STDIN));
-if ($answer !== '' && strtolower($answer) !== 'y' && strtolower($answer) !== 'yes') {
-    echo 'Aborted.' . PHP_EOL;
-    exit(0);
+if ($autoYes) {
+    echo PHP_EOL . 'Continue? [Y/n] Y' . PHP_EOL;
+} else {
+    echo PHP_EOL . 'Continue? [Y/n] ';
+    $answer = trim(fgets(STDIN));
+    if ($answer !== '' && strtolower($answer) !== 'y' && strtolower($answer) !== 'yes') {
+        echo 'Aborted.' . PHP_EOL;
+        exit(0);
+    }
 }
 
 // Upload files
