@@ -72,6 +72,41 @@ $iniFile = getcwd() . '/dpl.ini';
 $noColor   = in_array('--no-color', $argv);
 $autoYes   = in_array('--yes', $argv) || in_array('-y', $argv);
 
+if (in_array('--help', $argv) || in_array('-?', $argv)) {
+    echo <<<HELP
+dpl — a simple SSH/rsync deploy tool
+
+Usage:
+  php dpl.php [options]
+
+dpl reads dpl.ini from the current directory to determine the remote host,
+path, and transfer settings. It uses the local git repository to calculate
+which files have changed since the last deploy and transfers only those files.
+
+Options:
+  --init        Create a dpl.ini template in the current directory.
+  --yes, -y     Auto-accept the confirmation prompt before deploying.
+  --no-color    Disable colored output (U/D file markers).
+  --help, -?    Show this help screen.
+
+dpl.ini [main] keys:
+  host          Remote host (required).
+  path          Remote deploy path (required).
+  port          SSH port (default: 22).
+  user          SSH user (default: current system user).
+  ssh_key       Path to SSH private key (default: SSH agent / ~/.ssh/id_rsa).
+  exclude[]     File/dir pattern to exclude from deploy (repeatable).
+                Supports wildcards: *.log, .*, vendor/*, composer.*
+
+Examples:
+  php dpl.php --init          Create a dpl.ini in the current project.
+  php dpl.php                 Deploy changed files interactively.
+  php dpl.php -y --no-color   Deploy without prompts or colors (for CI).
+
+HELP;
+    exit(0);
+}
+
 if (in_array('--init', $argv)) {
     if (file_exists($iniFile)) {
         fwrite(STDERR, 'Error: dpl.ini already exists.' . PHP_EOL);
