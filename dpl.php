@@ -54,6 +54,15 @@ function filterExcluded(array $files, array $excludePatterns): array
 // This template is used when running with --init to create a new dpl.ini file.
 // It should be kept up to date with the actual expected format of dpl.ini.
 $iniTemplate = <<<INI
+; [*] defines defaults inherited by all sections.
+; Scalar values (host, user, port, ...) can be overridden per section.
+; exclude[] patterns are merged with the section's own exclude[] list.
+[*]
+    exclude[] = dpl.ini
+    exclude[] = .git*
+    ; exclude[] = .env
+    ; exclude[] = tmp/*
+
 [main]
     host = example.com
     ; port = 22
@@ -63,10 +72,7 @@ $iniTemplate = <<<INI
 
     ; revision_file = .dplrev
 
-    exclude[] = dpl.ini
-    exclude[] = .git*
-    ; exclude[] = .env
-    ; exclude[] = tmp/*
+    exclude[] = logs/*
 
 ; [production]
 ;     host = prod.example.com
@@ -153,6 +159,27 @@ $sectionConfig = $config[$section] ?? [];
 if (empty($sectionConfig)) {
     fwrite(STDERR, "Error: Section \"[$section]\" not found in dpl.ini." . PHP_EOL);
     exit(1);
+}
+
+// Merge [*] defaults: scalar keys fall back to [*] if not set in the section;
+// exclude[] arrays are merged (union of both).
+$defaults = $config['*'] ?? [];
+if (!empty($defaults)) {
+    $defaultExcludes = $defaults['exclude'] ?? [];
+    if (!is_array($defaultExcludes)) {
+        $defaultExcludes = [$defaultExcludes];
+    }
+    $sectionExcludes = $sectionConfig['exclude'] ?? [];
+    if (!is_array($sectionExcludes)) {
+        $sectionExcludes = [$sectionExcludes];
+    }
+    // Section scalar values take priority; fall back to [*] for missing keys
+    $sectionConfig = [
+        ...array_filter($defaults, fn($k) => $k !== 'exclude', ARRAY_FILTER_USE_KEY),
+        ...array_filter($sectionConfig, fn($k) => $k !== 'exclude', ARRAY_FILTER_USE_KEY),
+    ];
+    // Merge exclude arrays from both sections
+    $sectionConfig['exclude'] = array_values(array_unique([...$defaultExcludes, ...$sectionExcludes]));
 }
 
 foreach (['host', 'path'] as $required) {

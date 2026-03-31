@@ -39,18 +39,20 @@ php dpl.php --init
 3. Edit `dpl.ini` and fill in your host and path:
 
 ```ini
+[*]
+    path = /var/www/html
+
+    exclude[] = dpl.ini
+    exclude[] = .git*
+
 [main]
-host = example.com
-; port = 22
-; user = myuser
-path = /var/www/html
-; ssh_key = ~/.ssh/id_rsa
+    host = example.com
 
-; revision_file = .dplrev
+[production]
+    host = prod.example.com
+    user = deploy
 
-exclude[] = dpl.ini
-; exclude[] = .env
-; exclude[] = tmp/*
+    exclude[] = .env
 ```
 
 4. Deploy:
@@ -82,6 +84,10 @@ php dpl.php production
 You can define multiple sections in `dpl.ini`, one per environment:
 
 ```ini
+[*]
+    exclude[] = dpl.ini
+    exclude[] = .git*
+
 [main]
     host = dev.example.com
     path = /var/www/dev
@@ -89,6 +95,11 @@ You can define multiple sections in `dpl.ini`, one per environment:
 [production]
     host = prod.example.com
     path = /var/www/html
+    user = deploy
+[*]
+    path = /var/www/html
+
+    exclude[] = .env
 ```
 
 Pass the section name as the first argument to deploy to it:
@@ -100,6 +111,32 @@ php dpl.php production  # deploys [production]
 
 Each section tracks its own remote revision independently, so deploying to one
 environment does not affect another.
+
+## Shared defaults with `[*]`
+
+The special `[*]` section defines defaults inherited by all other sections:
+
+- **Scalar keys** (`host`, `user`, `port`, `ssh_key`, `revision_file`): the
+  section's own value takes priority; `[*]` provides the fallback.
+- **`exclude[]`**: patterns from `[*]` and the target section are **merged**,
+  so both lists are always applied.
+
+This is most useful for `exclude[]` patterns that are the same across all
+environments:
+
+```ini
+[*]
+    exclude[] = dpl.ini
+    exclude[] = .git*
+    exclude[] = .env
+    user = www-data
+
+[main]
+    host = dev.example.com
+    path = /var/www/dev
+    user = myuser          ; overrides [*] user for this section
+    exclude[] = tests/*    ; merged with [*] excludes
+```
 
 ## dpl.ini reference
 
