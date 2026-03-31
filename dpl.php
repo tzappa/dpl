@@ -61,6 +61,8 @@ $iniTemplate = <<<INI
     path = /var/www/html
     ; ssh_key = ~/.ssh/id_rsa
 
+    ; revision_file = .dplrev
+
     exclude[] = dpl.ini
     exclude[] = .git*
     ; exclude[] = .env
@@ -96,6 +98,7 @@ dpl.ini [main] keys:
   port          SSH port (default: 22).
   user          SSH user (default: current system user).
   ssh_key       Path to SSH private key (default: SSH agent / ~/.ssh/id_rsa).
+  revision_file Name of the remote revision tracking file (default: .dplrev).
   exclude[]     File/dir pattern to exclude from deploy (repeatable).
                 Supports wildcards: *.log, .*, vendor/*, composer.*
 
@@ -142,6 +145,12 @@ foreach (['host', 'path'] as $required) {
 $excludePatterns = $main['exclude'] ?? [];
 if (!is_array($excludePatterns)) {
     $excludePatterns = [$excludePatterns];
+}
+
+// always exclude the revision file, regardless of dpl.ini exclude list
+$revFileName = $main['revision_file'] ?? '.dplrev';
+if (!in_array($revFileName, $excludePatterns)) {
+    $excludePatterns[] = $revFileName;
 }
 
 // check git for not being in a repository
@@ -206,7 +215,7 @@ if ($sshKey) {
 $sshDest = $user ? "$user@$host" : $host;
 $ssh     = "$sshBase $sshDest";
 
-$revFile = "$path/.dplrev";
+$revFile = "$path/$revFileName";
 
 exec("{$ssh} 'test -d $path && test -w $path' 2>/dev/null", $output, $code);
 if ($code !== 0) {
