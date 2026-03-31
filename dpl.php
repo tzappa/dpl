@@ -155,6 +155,11 @@ if ($config === false) {
     exit(1);
 }
 
+if ($section === '*') {
+    fwrite(STDERR, 'Error: [*] is a defaults section and cannot be deployed to.' . PHP_EOL);
+    exit(1);
+}
+
 $sectionConfig = $config[$section] ?? [];
 if (empty($sectionConfig)) {
     fwrite(STDERR, "Error: Section \"[$section]\" not found in dpl.ini." . PHP_EOL);

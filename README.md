@@ -114,7 +114,10 @@ environment does not affect another.
 
 ## Shared defaults with `[*]`
 
-The special `[*]` section defines defaults inherited by all other sections:
+The special `[*]` section defines defaults inherited by all other sections.
+It is not a deploy target — running `php dpl.php '*'` is an error.
+
+
 
 - **Scalar keys** (`host`, `user`, `port`, `ssh_key`, `revision_file`): the
   section's own value takes priority; `[*]` provides the fallback.
