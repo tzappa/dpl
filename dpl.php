@@ -67,6 +67,10 @@ $iniTemplate = <<<INI
     exclude[] = .git*
     ; exclude[] = .env
     ; exclude[] = tmp/*
+
+; [production]
+;     host = prod.example.com
+;     path = /var/www/html
 INI;
 
 
@@ -75,16 +79,28 @@ $iniFile = getcwd() . '/dpl.ini';
 $noColor   = in_array('--no-color', $argv);
 $autoYes   = in_array('--yes', $argv) || in_array('-y', $argv);
 
+// Parse optional positional argument for section name (default: main)
+$section = 'main';
+foreach (array_slice($argv, 1) as $arg) {
+    if (strlen($arg) > 0 && $arg[0] !== '-') {
+        $section = $arg;
+        break;
+    }
+}
+
 if (in_array('--help', $argv) || in_array('-?', $argv)) {
     echo <<<HELP
 dpl — a simple SSH/rsync deploy tool
 
 Usage:
-  php dpl.php [options]
+  php dpl.php [section] [options]
 
 dpl reads dpl.ini from the current directory to determine the remote host,
 path, and transfer settings. It uses the local git repository to calculate
 which files have changed since the last deploy and transfers only those files.
+
+Arguments:
+  section       Section name from dpl.ini to deploy (default: main).
 
 Options:
   --init        Create a dpl.ini template in the current directory.
@@ -92,7 +108,7 @@ Options:
   --no-color    Disable colored output (U/D file markers).
   --help, -?    Show this help screen.
 
-dpl.ini [main] keys:
+dpl.ini section keys:
   host          Remote host (required).
   path          Remote deploy path (required).
   port          SSH port (default: 22).
@@ -104,7 +120,8 @@ dpl.ini [main] keys:
 
 Examples:
   php dpl.php --init          Create a dpl.ini in the current project.
-  php dpl.php                 Deploy changed files interactively.
+  php dpl.php                 Deploy changed files to [main] interactively.
+  php dpl.php production      Deploy changed files to [production].
   php dpl.php -y --no-color   Deploy without prompts or colors (for CI).
 
 HELP;
@@ -132,23 +149,27 @@ if ($config === false) {
     exit(1);
 }
 
-$main = $config['main'] ?? [];
+$sectionConfig = $config[$section] ?? [];
+if (empty($sectionConfig)) {
+    fwrite(STDERR, "Error: Section \"[$section]\" not found in dpl.ini." . PHP_EOL);
+    exit(1);
+}
 
 foreach (['host', 'path'] as $required) {
-    if (empty($main[$required])) {
-        fwrite(STDERR, "Error: \"$required\" is required in [main] section of dpl.ini." . PHP_EOL);
+    if (empty($sectionConfig[$required])) {
+        fwrite(STDERR, "Error: \"$required\" is required in [$section] section of dpl.ini." . PHP_EOL);
         exit(1);
     }
 }
 
 // which files to exclude from deployment, based on patterns in dpl.ini
-$excludePatterns = $main['exclude'] ?? [];
+$excludePatterns = $sectionConfig['exclude'] ?? [];
 if (!is_array($excludePatterns)) {
     $excludePatterns = [$excludePatterns];
 }
 
 // always exclude the revision file, regardless of dpl.ini exclude list
-$revFileName = $main['revision_file'] ?? '.dplrev';
+$revFileName = $sectionConfig['revision_file'] ?? '.dplrev';
 if (!in_array($revFileName, $excludePatterns)) {
     $excludePatterns[] = $revFileName;
 }
@@ -202,11 +223,11 @@ if ($gitCode !== 0 || !preg_match('/^[0-9a-f]{40}$/i', $localRev)) {
 }
 echo "Local revision: $localRev" . PHP_EOL;
 
-$host    = $main['host'];
-$path    = rtrim($main['path'], '/');
-$port    = (int) ($main['port'] ?? 22);
-$user    = $main['user'] ?? null;
-$sshKey  = $main['ssh_key'] ?? null;
+$host    = $sectionConfig['host'];
+$path    = rtrim($sectionConfig['path'], '/');
+$port    = (int) ($sectionConfig['port'] ?? 22);
+$user    = $sectionConfig['user'] ?? null;
+$sshKey  = $sectionConfig['ssh_key'] ?? null;
 
 $sshBase = "ssh -p $port";
 if ($sshKey) {

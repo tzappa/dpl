@@ -59,6 +59,12 @@ exclude[] = dpl.ini
 php dpl.php
 ```
 
+To deploy to a different section (e.g. `[production]`):
+
+```bash
+php dpl.php production
+```
+
 ## How it works
 
 - On first deploy the remote path must exist and be writable. dpl creates a
@@ -71,9 +77,33 @@ php dpl.php
 - The revision file is always excluded from uploads automatically, even if not
   listed in `exclude[]`.
 
+## Multiple environments
+
+You can define multiple sections in `dpl.ini`, one per environment:
+
+```ini
+[main]
+    host = dev.example.com
+    path = /var/www/dev
+
+[production]
+    host = prod.example.com
+    path = /var/www/html
+```
+
+Pass the section name as the first argument to deploy to it:
+
+```bash
+php dpl.php             # deploys [main]
+php dpl.php production  # deploys [production]
+```
+
+Each section tracks its own remote revision independently, so deploying to one
+environment does not affect another.
+
 ## dpl.ini reference
 
-All keys belong to the `[main]` section.
+Keys are per section. The default section is `[main]`.
 
 | Key         | Required | Default            | Description                                      |
 |-------------|----------|--------------------|--------------------------------------------------|
@@ -103,12 +133,13 @@ exclude[] = vendor         ; entire vendor/ directory
 
 ## Options
 
-| Flag          | Description                                              |
-|---------------|----------------------------------------------------------|
-| `--init`      | Create a `dpl.ini` template in the current directory     |
-| `--yes`, `-y` | Skip the confirmation prompt (useful for CI/CD)          |
-| `--no-color`  | Disable coloured output                                  |
-| `--help`, `-?`| Show the help screen                                     |
+| Argument / Flag | Description                                              |
+|-----------------|----------------------------------------------------------|
+| `section`       | Section from `dpl.ini` to deploy (default: `main`)       |
+| `--init`        | Create a `dpl.ini` template in the current directory     |
+| `--yes`, `-y`   | Skip the confirmation prompt (useful for CI/CD)          |
+| `--no-color`    | Disable coloured output                                  |
+| `--help`, `-?`  | Show the help screen                                     |
 
 ## Deploy output
 
@@ -133,6 +164,7 @@ Deploy summary:
 
 ```bash
 php dpl.php --yes --no-color
+php dpl.php production --yes --no-color
 ```
 
 ## Notes
