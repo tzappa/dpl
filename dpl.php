@@ -11,6 +11,9 @@ if (version_compare(PHP_VERSION, '8.3.0', '<')) {
     exit('Requires PHP 8.3 or higher.' . PHP_EOL);
 }
 
+const DEFAULT_REV_FILE = '.dplrev';
+const DEFAULT_SECTION   = 'main';
+
 /**
  * Writes the given revision string to the .dplrev file on the remote host.
  * Returns true on success, false on failure.
@@ -53,6 +56,8 @@ function filterExcluded(array $files, array $excludePatterns): array
 
 // This template is used when running with --init to create a new dpl.ini file.
 // It should be kept up to date with the actual expected format of dpl.ini.
+$defRevFile  = DEFAULT_REV_FILE;  // aliases for heredoc interpolation
+$defSection  = DEFAULT_SECTION;
 $iniTemplate = <<<INI
 ; [*] defines defaults inherited by all sections.
 ; Scalar values (host, user, port, ...) can be overridden per section.
@@ -63,14 +68,14 @@ $iniTemplate = <<<INI
     ; exclude[] = .env
     ; exclude[] = tmp/*
 
-[main]
+[{$defSection}]
     host = example.com
     ; port = 22
     ; user =
     path = /var/www/html
     ; ssh_key = ~/.ssh/id_rsa
 
-    ; revision_file = .dplrev
+    ; revision_file = {$defRevFile}
 
     exclude[] = logs/*
 
@@ -81,18 +86,6 @@ INI;
 
 
 $iniFile = getcwd() . '/dpl.ini';
-
-$noColor   = in_array('--no-color', $argv);
-$autoYes   = in_array('--yes', $argv) || in_array('-y', $argv);
-
-// Parse optional positional argument for section name (default: main)
-$section = 'main';
-foreach (array_slice($argv, 1) as $arg) {
-    if (strlen($arg) > 0 && $arg[0] !== '-') {
-        $section = $arg;
-        break;
-    }
-}
 
 if (in_array('--help', $argv) || in_array('-?', $argv)) {
     echo <<<HELP
@@ -106,7 +99,7 @@ path, and transfer settings. It uses the local git repository to calculate
 which files have changed since the last deploy and transfers only those files.
 
 Arguments:
-  section       Section name from dpl.ini to deploy (default: main).
+  section       Section name from dpl.ini to deploy (default: {$defSection}).
 
 Options:
   --init        Create a dpl.ini template in the current directory.
@@ -120,13 +113,13 @@ dpl.ini section keys:
   port          SSH port (default: 22).
   user          SSH user (default: current system user).
   ssh_key       Path to SSH private key (default: SSH agent / ~/.ssh/id_rsa).
-  revision_file Name of the remote revision tracking file (default: .dplrev).
+  revision_file Name of the remote revision tracking file (default: {$defRevFile}).
   exclude[]     File/dir pattern to exclude from deploy (repeatable).
                 Supports wildcards: *.log, .*, vendor/*, composer.*
 
 Examples:
   php dpl.php --init          Create a dpl.ini in the current project.
-  php dpl.php                 Deploy changed files to [main] interactively.
+  php dpl.php                 Deploy changed files to [{$defSection}] interactively.
   php dpl.php production      Deploy changed files to [production].
   php dpl.php -y --no-color   Deploy without prompts or colors (for CI).
 
@@ -149,14 +142,26 @@ if (!file_exists($iniFile)) {
     exit(1);
 }
 
-$config = parse_ini_file($iniFile, true);
-if ($config === false) {
-    fwrite(STDERR, 'Error: Failed to parse dpl.ini.' . PHP_EOL);
-    exit(1);
+$noColor   = in_array('--no-color', $argv);
+$autoYes   = in_array('--yes', $argv) || in_array('-y', $argv);
+
+// Parse optional positional argument for section name (default: DEFAULT_SECTION)
+$section = DEFAULT_SECTION;
+foreach (array_slice($argv, 1) as $arg) {
+    if (strlen($arg) > 0 && $arg[0] !== '-') {
+        $section = $arg;
+        break;
+    }
 }
 
 if ($section === '*') {
     fwrite(STDERR, 'Error: [*] is a defaults section and cannot be deployed to.' . PHP_EOL);
+    exit(1);
+}
+
+$config = parse_ini_file($iniFile, true);
+if ($config === false) {
+    fwrite(STDERR, 'Error: Failed to parse dpl.ini.' . PHP_EOL);
     exit(1);
 }
 
@@ -201,7 +206,7 @@ if (!is_array($excludePatterns)) {
 }
 
 // always exclude the revision file, regardless of dpl.ini exclude list
-$revFileName = $sectionConfig['revision_file'] ?? '.dplrev';
+$revFileName = $sectionConfig['revision_file'] ?? DEFAULT_REV_FILE;
 if (!in_array($revFileName, $excludePatterns)) {
     $excludePatterns[] = $revFileName;
 }
