@@ -1,4 +1,4 @@
-# dpl
+# dpl - Deployment Tool
 
 A minimal PHP CLI deploy tool that uses `git` and `rsync` to transfer only
 the files that changed since the last deploy to a remote host over SSH.
