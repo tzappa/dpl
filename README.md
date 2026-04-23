@@ -1,13 +1,15 @@
 # dpl - Deployment Tool
 
-A minimal PHP CLI deploy tool that uses `git` and `rsync` to transfer only
-the files that changed since the last deploy to a remote host over SSH.
+A minimal PHP CLI deploy tool that uses `git` to transfer only the files that
+changed since the last deploy to a remote host over SSH. It uses `rsync` by
+default and falls back to `scp` automatically if rsync is not available on the
+remote server.
 
 ## Requirements
 
 - PHP 8.3 or higher (CLI)
 - `git`
-- `rsync`
+- `rsync` (recommended) or `scp` (fallback, available on virtually all servers)
 - SSH access to the remote host
 
 ## Installation
@@ -150,6 +152,7 @@ Keys are per section. The default section is `[main]`.
 | `user`           | no       | current OS user      | SSH username                                     |
 | `ssh_key`        | no       | SSH agent / default  | Path to SSH private key                          |
 | `revision_file`  | no       | `.dplrev`            | Name of the remote revision tracking file        |
+| `transfer`       | no       | `rsync`              | Transfer method: `rsync` or `scp` (see below)    |
 | `exclude[]`      | no       | —                    | Glob pattern to exclude (repeatable)             |
 
 ### exclude patterns
@@ -166,6 +169,29 @@ exclude[] = *.log          ; all .log files
 exclude[] = composer.*     ; composer.json, composer.lock, ...
 exclude[] = tmp/*          ; everything inside tmp/
 exclude[] = vendor         ; entire vendor/ directory
+```
+
+### transfer
+
+Controls how files are uploaded to the remote host.
+
+| Value   | Behaviour                                                                 |
+|---------|---------------------------------------------------------------------------|
+| `rsync` | Use rsync (default). If rsync is not found on the remote, dpl prints a warning and retries the upload file-by-file via scp. |
+| `scp`   | Always use scp, skipping rsync entirely. Use this for servers where you know rsync is unavailable. |
+
+```ini
+[main]
+    host = example.com
+    path = /var/www/html
+    transfer = scp        ; force scp on a server without rsync
+```
+
+You can also set `transfer` in the `[*]` section to apply it to all environments:
+
+```ini
+[*]
+    transfer = scp
 ```
 
 ## Options

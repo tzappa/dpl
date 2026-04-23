@@ -112,6 +112,62 @@ function mergeSection(array $config, string $section): array
  * Deploys a single section to its remote host.
  * Returns 0 on success, 1 on failure.
  */
+/**
+ * Upload files via rsync. Returns [uploaded_count, failed_files].
+ */
+function uploadViaRsync(
+    array $files,
+    string $sshBase,
+    string $sshDest,
+    string $path,
+): array {
+    $tmpFile = tempnam(sys_get_temp_dir(), "dpl_");
+    file_put_contents($tmpFile, implode(PHP_EOL, $files) . PHP_EOL);
+    $cmd =
+        "rsync -az --files-from=" .
+        escapeshellarg($tmpFile) .
+        " -e " .
+        escapeshellarg($sshBase) .
+        " . $sshDest:$path/ 2>/dev/null";
+    exec($cmd, $output, $code);
+    unlink($tmpFile);
+    if ($code !== 0) {
+        return [0, $files];
+    }
+    return [count($files), []];
+}
+
+/**
+ * Upload files one-by-one via scp. Returns [uploaded_count, failed_files].
+ */
+function uploadViaScp(
+    array $files,
+    string $sshBase,
+    string $sshDest,
+    string $path,
+): array {
+    // scp uses -P for port instead of ssh's -p
+    $scpBase = preg_replace('/^ssh\b/', 'scp', $sshBase);
+    $scpBase = preg_replace('/ -p (\d+)/', ' -P $1', $scpBase);
+
+    $uploaded = 0;
+    $failed = [];
+    foreach ($files as $file) {
+        $remoteDir = escapeshellarg("$sshDest:$path/" . dirname($file));
+        $localFile = escapeshellarg($file);
+        // Ensure the remote directory exists before copying
+        exec("$sshBase $sshDest 'mkdir -p " . escapeshellarg("$path/" . dirname($file)) . "' 2>/dev/null");
+        $cmd = "$scpBase $localFile $remoteDir/ 2>/dev/null";
+        exec($cmd, $out, $code);
+        if ($code !== 0) {
+            $failed[] = $file;
+        } else {
+            $uploaded++;
+        }
+    }
+    return [$uploaded, $failed];
+}
+
 function deploySection(
     string $sectionName,
     array $sectionConfig,
@@ -286,21 +342,31 @@ function deploySection(
     $uploaded = 0;
     $uploadFailed = [];
     if (!empty($uploadFiles)) {
-        // Write the file list to a temp file and pass it to rsync via --files-from
-        $tmpFile = tempnam(sys_get_temp_dir(), "dpl_");
-        file_put_contents($tmpFile, implode(PHP_EOL, $uploadFiles) . PHP_EOL);
-        $rsync =
-            "rsync -az --files-from=" .
-            escapeshellarg($tmpFile) .
-            " -e " .
-            escapeshellarg($sshBase) .
-            " . $sshDest:$path/ 2>/dev/null";
-        exec($rsync, $rsyncOutput, $rsyncCode);
-        unlink($tmpFile);
-        if ($rsyncCode !== 0) {
-            $uploadFailed = $uploadFiles;
+        $transfer = strtolower(trim($sectionConfig["transfer"] ?? "rsync"));
+        if ($transfer === "scp") {
+            [$uploaded, $uploadFailed] = uploadViaScp(
+                $uploadFiles,
+                $sshBase,
+                $sshDest,
+                $path,
+            );
         } else {
-            $uploaded = count($uploadFiles);
+            // Try rsync first; fall back to scp if rsync is unavailable
+            [$uploaded, $uploadFailed] = uploadViaRsync(
+                $uploadFiles,
+                $sshBase,
+                $sshDest,
+                $path,
+            );
+            if ($uploaded === 0 && count($uploadFailed) === count($uploadFiles)) {
+                echo "rsync failed, falling back to scp..." . PHP_EOL;
+                [$uploaded, $uploadFailed] = uploadViaScp(
+                    $uploadFiles,
+                    $sshBase,
+                    $sshDest,
+                    $path,
+                );
+            }
         }
     }
 
@@ -387,6 +453,7 @@ $iniTemplate = <<<INI
     ; ssh_key = ~/.ssh/id_rsa
 
     ; revision_file = {$defRevFile}
+    ; transfer = rsync   ; rsync (default, falls back to scp) or scp
 
     exclude[] = logs/*
 
@@ -427,6 +494,9 @@ if (in_array("--help", $argv) || in_array("-?", $argv)) {
       user          SSH user (default: current system user).
       ssh_key       Path to SSH private key (default: SSH agent / ~/.ssh/id_rsa).
       revision_file Name of the remote revision tracking file (default: {$defRevFile}).
+      transfer      Transfer method: rsync (default) or scp. rsync is used by
+                    default and automatically falls back to scp if rsync is not
+                    available on the remote. Set to scp to skip rsync entirely.
       exclude[]     File/dir pattern to exclude from deploy (repeatable).
                     Supports wildcards: *.log, .*, vendor/*, composer.*
 
