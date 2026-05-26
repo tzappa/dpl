@@ -153,6 +153,7 @@ function uploadViaScp(
     $uploaded = 0;
     $failed = [];
     foreach ($files as $file) {
+        echo "  Uploading $file" . PHP_EOL;
         $remoteDir = escapeshellarg("$sshDest:$path/" . dirname($file));
         $localFile = escapeshellarg($file);
         // Ensure the remote directory exists before copying
@@ -374,6 +375,7 @@ function deploySection(
     $deleted = 0;
     $deleteFailed = [];
     foreach ($deleteFiles as $file) {
+        echo "  Deleting $file" . PHP_EOL;
         $remoteFile = escapeshellarg("$path/$file");
         exec("$ssh 'rm -f $remoteFile' 2>/dev/null", $rmOutput, $rmCode);
         if ($rmCode !== 0) {
