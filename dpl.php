@@ -152,12 +152,16 @@ function uploadViaScp(
 
     $uploaded = 0;
     $failed = [];
+    $lastMkdir = null;
     foreach ($files as $file) {
         echo "  Uploading $file" . PHP_EOL;
-        $remoteDir = escapeshellarg("$sshDest:$path/" . dirname($file));
+        $fileDir = dirname($file);
+        $remoteDir = escapeshellarg("$sshDest:$path/$fileDir");
         $localFile = escapeshellarg($file);
-        // Ensure the remote directory exists before copying
-        exec("$sshBase $sshDest 'mkdir -p " . escapeshellarg("$path/" . dirname($file)) . "' 2>/dev/null");
+        if ($lastMkdir !== $fileDir) {
+            exec("$sshBase $sshDest 'mkdir -p " . escapeshellarg("$path/$fileDir") . "' 2>/dev/null");
+            $lastMkdir = $fileDir;
+        }
         $cmd = "$scpBase $localFile $remoteDir/ 2>/dev/null";
         exec($cmd, $out, $code);
         if ($code !== 0) {
