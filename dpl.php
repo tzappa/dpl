@@ -120,6 +120,7 @@ function uploadViaRsync(
     string $sshBase,
     string $sshDest,
     string $path,
+    string $sshPassPrefix = "",
 ): array {
     $tmpFile = tempnam(sys_get_temp_dir(), "dpl_");
     file_put_contents($tmpFile, implode(PHP_EOL, $files) . PHP_EOL);
@@ -127,7 +128,7 @@ function uploadViaRsync(
         "rsync -az --files-from=" .
         escapeshellarg($tmpFile) .
         " -e " .
-        escapeshellarg($sshBase) .
+        escapeshellarg($sshPassPrefix . $sshBase) .
         " . $sshDest:$path/ 2>/dev/null";
     exec($cmd, $output, $code);
     unlink($tmpFile);
@@ -145,9 +146,10 @@ function uploadViaScp(
     string $sshBase,
     string $sshDest,
     string $path,
+    string $sshPassPrefix = "",
 ): array {
-    // scp uses -P for port instead of ssh's -p
-    $scpBase = preg_replace('/^ssh\b/', 'scp', $sshBase);
+    // scp uses -P for port instead of ssh's -p; $sshBase always starts with "ssh"
+    $scpBase = $sshPassPrefix . preg_replace('/^ssh\b/', 'scp', $sshBase);
     $scpBase = preg_replace('/ -p (\d+)/', ' -P $1', $scpBase);
 
     $uploaded = 0;
@@ -159,7 +161,7 @@ function uploadViaScp(
         $remoteDir = escapeshellarg("$sshDest:$path/$fileDir");
         $localFile = escapeshellarg($file);
         if ($lastMkdir !== $fileDir) {
-            exec("$sshBase $sshDest 'mkdir -p " . escapeshellarg("$path/$fileDir") . "' 2>/dev/null");
+            exec("{$sshPassPrefix}{$sshBase} $sshDest 'mkdir -p " . escapeshellarg("$path/$fileDir") . "' 2>/dev/null");
             $lastMkdir = $fileDir;
         }
         $cmd = "$scpBase $localFile $remoteDir/ 2>/dev/null";
@@ -197,19 +199,42 @@ function deploySection(
     $port = (int) ($sectionConfig["port"] ?? 22);
     $user = $sectionConfig["user"] ?? null;
     $sshKey = $sectionConfig["ssh_key"] ?? null;
+    $pass = $sectionConfig["pass"] ?? null;
 
     $sshBase = "ssh -p $port";
     if ($sshKey) {
         $sshBase .= " -i $sshKey";
     }
+    $sshPassPrefix = $pass ? "sshpass -p " . escapeshellarg($pass) . " " : "";
     $sshDest = $user ? "$user@$host" : $host;
-    $ssh = "$sshBase $sshDest";
+    $ssh = "{$sshPassPrefix}{$sshBase} $sshDest";
+
+    if ($pass) {
+        exec("which sshpass 2>/dev/null", $whichOutput, $whichCode);
+        if ($whichCode !== 0) {
+            fwrite(STDERR, "Error: sshpass is required for password authentication but was not found." . PHP_EOL);
+            fwrite(STDERR, "       Install it with: sudo apt install sshpass" . PHP_EOL);
+            return 1;
+        }
+    }
 
     $revFile = "$path/$revFileName";
+
+    exec("{$ssh} 'exit 0' 2>/dev/null", $output, $code);
+    if ($code !== 0) {
+        fwrite(STDERR, "Error: Cannot connect to $host." . PHP_EOL);
+        if ($pass) {
+            fwrite(STDERR, "       Check that sshpass is installed and the password is correct." . PHP_EOL);
+        } else {
+            fwrite(STDERR, "       Check host, port, user, and SSH key settings." . PHP_EOL);
+        }
+        return 1;
+    }
 
     exec("{$ssh} 'test -d $path && test -w $path' 2>/dev/null", $output, $code);
     if ($code !== 0) {
         fwrite(STDERR, "Error: Cannot access $path on $host." . PHP_EOL);
+        fwrite(STDERR, "       The path may not exist or the user may not have write permission." . PHP_EOL);
         return 1;
     }
 
@@ -354,6 +379,7 @@ function deploySection(
                 $sshBase,
                 $sshDest,
                 $path,
+                $sshPassPrefix,
             );
         } else {
             // Try rsync first; fall back to scp if rsync is unavailable
@@ -362,6 +388,7 @@ function deploySection(
                 $sshBase,
                 $sshDest,
                 $path,
+                $sshPassPrefix,
             );
             if ($uploaded === 0 && count($uploadFailed) === count($uploadFiles)) {
                 echo "rsync failed, falling back to scp..." . PHP_EOL;
@@ -370,6 +397,7 @@ function deploySection(
                     $sshBase,
                     $sshDest,
                     $path,
+                    $sshPassPrefix,
                 );
             }
         }
@@ -457,6 +485,7 @@ $iniTemplate = <<<INI
     ; user =
     path = /var/www/html
     ; ssh_key = ~/.ssh/id_rsa
+    ; pass =
 
     ; revision_file = {$defRevFile}
     ; transfer = rsync   ; rsync (default, falls back to scp) or scp
@@ -499,6 +528,7 @@ if (in_array("--help", $argv) || in_array("-?", $argv)) {
       port          SSH port (default: 22).
       user          SSH user (default: current system user).
       ssh_key       Path to SSH private key (default: SSH agent / ~/.ssh/id_rsa).
+      pass          SSH password (uses sshpass; omit to use key-based auth).
       revision_file Name of the remote revision tracking file (default: {$defRevFile}).
       transfer      Transfer method: rsync (default) or scp. rsync is used by
                     default and automatically falls back to scp if rsync is not
