@@ -23,7 +23,7 @@ function writeRemoteRevision(
     string $revision,
 ): bool {
     exec(
-        "$ssh 'echo " . escapeshellarg($revision) . " > $revFile' 2>/dev/null",
+        "$ssh 'printf %s " . escapeshellarg($revision) . " > $revFile' 2>/dev/null",
         $output,
         $code,
     );
